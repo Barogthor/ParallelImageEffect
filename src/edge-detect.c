@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#define IMAGE_STACK_SIZE 12
 #define DIM 3
 #define LENGHT DIM
 #define OFFSET DIM /2
@@ -36,6 +37,7 @@ enum ImageEffect{
     EDGE_DETECT,
     SHARPEN
 };
+
 typedef struct setting_t{
     char* source_folder;
     char* destination_folder;
@@ -43,17 +45,31 @@ typedef struct setting_t{
     enum ImageEffect effect;
 } Settings;
 
-float** get_matrix_effect(enum ImageEffect const effect){
-    switch(effect){
-        case BOX_BLUR:
-            return BOX_BLUR_KERNEL;
-        case SHARPEN:
-            return SHARPEN_KERNEL;
-        case EDGE_DETECT:
-        default:
-            return KERNEL;
-    }
-}
+typedef struct stack_t {
+    Image stack[IMAGE_STACK_SIZE];
+    int count;
+    int max;
+    pthread_mutex_t lock;
+    pthread_cond_t can_save_on_disk;
+    pthread_cond_t can_transform_image;
+} Stack;
+
+typedef struct state_t {
+    const Settings *settings;
+    Stack *stack;
+} State;
+
+//float** get_matrix_effect(enum ImageEffect const effect){
+//    switch(effect){
+//        case BOX_BLUR:
+//            return BOX_BLUR_KERNEL;
+//        case SHARPEN:
+//            return SHARPEN_KERNEL;
+//        case EDGE_DETECT:
+//        default:
+//            return KERNEL;
+//    }
+//}
 
 void apply_effect(Image* original, Image* new_i, enum ImageEffect const effect) {
 
@@ -80,7 +96,7 @@ void apply_effect(Image* original, Image* new_i, enum ImageEffect const effect) 
             }
 
             Pixel* dest = &new_i->pixel_data[y][x];
-            dest->r = (uint8_t)  (c.Red <= 0 ? 0 : c.Red >= 255 ? 255 : c.Red);
+            dest->r = (uint8_t)(c.Red <= 0 ? 0 : c.Red >= 255 ? 255 : c.Red);
             dest->g = (uint8_t) (c.Green <= 0 ? 0 : c.Green >= 255 ? 255 : c.Green);
             dest->b = (uint8_t) (c.Blue <= 0 ? 0 : c.Blue >= 255 ? 255 : c.Blue);
         }
@@ -171,11 +187,25 @@ int set_settings(int const argc, char** argv, Settings *settings){
     return 0;
 }
 
+void init_stack(Stack *stack) {
+    stack->count = 0;
+    stack->max = IMAGE_STACK_SIZE;
+    pthread_cond_init(&stack->can_transform_image, NULL);
+    pthread_cond_init(&stack->can_save_on_disk, NULL);
+    pthread_mutex_init(&stack->lock, NULL);
+}
+
 int main(int argc, char** argv) {
     Settings settings;
+    Stack stack;
+    State state;
+
     int code = set_settings(argc, argv, &settings);
     if(code != 0) return code;
     print_settings(&settings);
+    init_stack(&stack);
+    state.stack = &stack;
+    state.settings = &settings;
 
     Image img = open_bitmap("in/bmp_tank.bmp");
     Image new_i;
