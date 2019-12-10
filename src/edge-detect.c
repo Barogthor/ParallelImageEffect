@@ -8,12 +8,9 @@
 #include <unistd.h>
 #include "bitmap.h"
 #include <stdint.h>
-#include <string.h>
+#include <pthread.h>
+#include "info.h"
 
-#define IMAGE_STACK_SIZE 12
-#define DIM 3
-#define LENGHT DIM
-#define OFFSET DIM /2
 
 const float KERNEL[DIM][DIM] = {{-1,-1,-1},
                                 {-1, 8,-1},
@@ -25,39 +22,6 @@ const float SHARPEN_KERNEL[DIM][DIM] = {{ 0,-1, 0},
 const float BOX_BLUR_KERNEL[DIM][DIM] = {{1/9,1/9,1/9},
                                          {1/9,1/9,1/9},
                                          {1/9,1/9,1/9}};
-
-typedef struct Color_t {
-    float Red;
-    float Green;
-    float Blue;
-} Color_e;
-
-enum ImageEffect{
-    BOX_BLUR,
-    EDGE_DETECT,
-    SHARPEN
-};
-
-typedef struct setting_t{
-    char* source_folder;
-    char* destination_folder;
-    int number_of_threads;
-    enum ImageEffect effect;
-} Settings;
-
-typedef struct stack_t {
-    Image stack[IMAGE_STACK_SIZE];
-    int count;
-    int max;
-    pthread_mutex_t lock;
-    pthread_cond_t can_save_on_disk;
-    pthread_cond_t can_transform_image;
-} Stack;
-
-typedef struct state_t {
-    const Settings *settings;
-    Stack *stack;
-} State;
 
 //float** get_matrix_effect(enum ImageEffect const effect){
 //    switch(effect){
@@ -103,102 +67,53 @@ void apply_effect(Image* original, Image* new_i, enum ImageEffect const effect) 
     }
 }
 
-int exit_with_error(char* msg){
-    perror(msg);
-    return -1;
-}
-
-void set_default_settings(Settings *settings){
-    settings->source_folder = "in";
-    settings->destination_folder = "out";
-    settings->number_of_threads = 1;
-    settings->effect = EDGE_DETECT;
-}
-
-void print_settings(Settings const* settings){
-    printf("SOURCE              : %s\n",settings->source_folder);
-    printf("DESTINATION         : %s\n",settings->destination_folder);
-    printf("NUMBER OF CONSUMERS : %d\n",settings->number_of_threads);
-    switch(settings->effect){
-        case BOX_BLUR:
-            printf("EFFECT              : Box blurring\n");
-            break;
-        case EDGE_DETECT:
-            printf("EFFECT              : Edge Detection\n");
-            break;
-        case SHARPEN:
-            printf("EFFECT              : Sharpen\n");
-            break;
+//TODO utiliser une autre strcuture de données pouvant lire et écrire sans concurrence
+void *save_processed_image(void *shared_state) {
+    State *state = (State *) (shared_state);
+    int tmp_file_id = 1;
+    while (1) {
+        //TODO réutiliser le nom de l'image d'origine
+        pthread_mutex_lock(&state->stack->lock);
+        if (state->stack->count <= 0) {
+            pthread_cond_signal(&state->stack->can_transform_image);
+            pthread_cond_wait(&state->stack->can_save_on_disk, &state->stack->lock);
+        }
+        char file_name[255];
+        sprintf(file_name, "%s/%d", state->settings->destination_folder, tmp_file_id);
+//        save_bitmap(state->stack->stack[state->stack->count], file_name);
+        state->stack->count--;
+        tmp_file_id++;
+        pthread_mutex_unlock(&state->stack->lock);
     }
+
 }
 
-void print_help(){
-    printf("-s or --source <a_string_source>           : Argument to customize source folder (./in as default)\n");
-    printf("-d or --destination <a_string_destination> : Argument to customize destination folder (./out as default)\n");
-    printf("-t or --threads <an_int>                   : Argument to customize number of productors thread working [1;16] (1 as default)\n");
-    printf("-e or --effect <a_string_effect>           : Argument to customize image effect <boxblur|sharpen|edgedetect> (edgedetect as default)\n");
-}
+void *transform_image(void *shared_state) {
+    State *state = (State *) shared_state;
+    while (1) {
+        pthread_mutex_lock(&state->stack->lock);
+        if (state->stack->count >= state->stack->max) {
+            pthread_cond_signal(&state->stack->can_save_on_disk);
+            pthread_cond_wait(&state->stack->can_transform_image, &state->stack->lock);
+        }
+        char file_name[255];
+        sprintf(file_name, "%s/%s", state->settings->source_folder, "un_nom");
 
-int set_settings(int const argc, char** argv, Settings *settings){
-    int i = 1;
-    set_default_settings(settings);
-    while(i < argc){
-        char* current_argument = argv[i];
-
-        if(strcmp(current_argument, "-h") == 0 || strcmp(current_argument, "--help") == 0){
-            print_help();
-            return 1;
-        }
-        else if(strcmp(current_argument, "-s") == 0 || strcmp(current_argument, "--source") == 0){
-            if(argc<=++i) return exit_with_error("Missing argument for source");
-            if(strcmp(argv[i], "") == 0 ) return exit_with_error("source folder value can't be empty");
-            settings->source_folder = argv[i];
-        }
-        else if(strcmp(current_argument, "-d") == 0 || strcmp(current_argument, "--destination") == 0){
-            if(argc<=++i) return exit_with_error("Missing argument for destination");
-            if(strcmp(argv[i], "") == 0 ) return exit_with_error("destination folder value can't be empty");
-            settings->destination_folder = argv[i];
-        }
-        else if(strcmp(current_argument, "-t") == 0 || strcmp(current_argument, "--threads") == 0){
-            if(argc<=++i) return exit_with_error("Missing argument for number of thread consumer");
-            int number_of_threads = atoi(argv[i]);
-            if(number_of_threads<1 || number_of_threads > 16 ) return exit_with_error("Invalid value for number of thread consumer. Should be [1;16]");
-            settings->number_of_threads = number_of_threads;
-        }
-        else if(strcmp(current_argument, "-e") == 0 || strcmp(current_argument, "--effect") == 0){
-            if(argc<=++i) return exit_with_error("Missing argument for image effect");
-            char* effect = argv[i];
-            if(strcmp(effect, "") == 0 ) return exit_with_error("image effect can't be empty");
-            else if(strcmp(effect, "boxblur")==0){
-                settings->effect = BOX_BLUR;
-            }
-            else if(strcmp(effect, "edgedetect")==0){
-                settings->effect = EDGE_DETECT;
-            }
-            else if(strcmp(effect, "sharpen")==0){
-                settings->effect = SHARPEN;
-            }
-            else{
-                return exit_with_error("Unknown image effect");
-            }
-        }
-        i++;
+//        Image img = open_bitmap(file_name);
+//        Image new_i;
+//        apply_effect(&img, &new_i, state->settings->effect);
+//        state->stack->stack[state->stack->count++] = new_i;
+        pthread_mutex_unlock(&state->stack->lock);
     }
-    return 0;
-}
-
-void init_stack(Stack *stack) {
-    stack->count = 0;
-    stack->max = IMAGE_STACK_SIZE;
-    pthread_cond_init(&stack->can_transform_image, NULL);
-    pthread_cond_init(&stack->can_save_on_disk, NULL);
-    pthread_mutex_init(&stack->lock, NULL);
 }
 
 int main(int argc, char** argv) {
     Settings settings;
     Stack stack;
     State state;
+    pthread_t consumer_thread;
+    pthread_t *producer_threads;
+    pthread_attr_t attr;
 
     int code = set_settings(argc, argv, &settings);
     if(code != 0) return code;
@@ -206,10 +121,46 @@ int main(int argc, char** argv) {
     init_stack(&stack);
     state.stack = &stack;
     state.settings = &settings;
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    producer_threads = (pthread_t *) malloc(sizeof(pthread_t) * settings.number_of_threads);
+//    void* arg = &state;
+    int number_of_files = list_dir(settings.source_folder, &state);
+    if (number_of_files == -1) {
+        return -1;
+    } else
+        state.image_amount = number_of_files;
+    for (int i = 0; i < state.image_amount; i++) {
+        printf("%s\n", state.list_image_files[i]);
+    }
 
+    int integer_part, remains, end;
+    integer_part = state.image_amount / state.settings->number_of_threads;
+    remains = state.image_amount % state.settings->number_of_threads;
+    printf("int part: %d\nremains: %d\n", integer_part, remains);
+    end = 0;
+    printf("amount: %d\n", number_of_files);
+    for (int i = 0; i < settings.number_of_threads; i++) {
+        int start = end;
+        end += integer_part;
+        if (remains > 0) {
+            remains--;
+            end++;
+        }
+        State thread_state;
+        clone_state(&state, &thread_state);
+        thread_state.start = start;
+        thread_state.end = end;
+        printf("[%d;%d[\n", thread_state.start, thread_state.end);
+        pthread_create(&producer_threads[i], &attr, transform_image, &state);
+    }
+//    pthread_create(&consumer_thread, NULL, save_processed_image, &state);
+//    pthread_join(consumer_thread, NULL);
     Image img = open_bitmap("in/bmp_tank.bmp");
     Image new_i;
     apply_effect(&img, &new_i, settings.effect);
     save_bitmap(new_i, "out/test_out.bmp");
+    free(state.list_image_files);
+    free(producer_threads);
     return 0;
 }
