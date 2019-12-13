@@ -128,18 +128,12 @@ int main(int argc, char** argv) {
     int number_of_files = list_dir(settings.source_folder, &state);
     if (number_of_files == -1) {
         return -1;
-    } else
-        state.image_amount = number_of_files;
-    for (int i = 0; i < state.image_amount; i++) {
-        printf("%s\n", state.list_image_files[i]);
     }
 
     int integer_part, remains, end;
-    integer_part = state.image_amount / state.settings->number_of_threads;
-    remains = state.image_amount % state.settings->number_of_threads;
-    printf("int part: %d\nremains: %d\n", integer_part, remains);
+    integer_part = number_of_files / state.settings->number_of_threads;
+    remains = number_of_files % state.settings->number_of_threads;
     end = 0;
-    printf("amount: %d\n", number_of_files);
     for (int i = 0; i < settings.number_of_threads; i++) {
         int start = end;
         end += integer_part;
@@ -147,20 +141,24 @@ int main(int argc, char** argv) {
             remains--;
             end++;
         }
-        State thread_state;
-        clone_state(&state, &thread_state);
-        thread_state.start = start;
-        thread_state.end = end;
-        printf("[%d;%d[\n", thread_state.start, thread_state.end);
-        pthread_create(&producer_threads[i], &attr, transform_image, &state);
+        State *thread_state = (State *) malloc(sizeof(State));
+        clone_state(&state, thread_state);
+        thread_state->start = start;
+        thread_state->end = end;
+        thread_state->thread_id = i;
+//        printf("[MAIN] id: %d | [%d;%d[ | %p | size: %ld\n", thread_state->thread_id, thread_state->start, thread_state->end, thread_state->list_image_files,
+//               sizeof(thread_state));
+//        printf("[MAIN] i: %d | %p\n", i, thread_state);
+        pthread_create(&producer_threads[i], &attr, transform_image, thread_state);
     }
-//    pthread_create(&consumer_thread, NULL, save_processed_image, &state);
-//    pthread_join(consumer_thread, NULL);
+    pthread_create(&consumer_thread, NULL, save_processed_image, &state);
+    pthread_join(consumer_thread, NULL);
     Image img = open_bitmap("in/bmp_tank.bmp");
     Image new_i;
     apply_effect(&img, &new_i, settings.effect);
     save_bitmap(new_i, "out/test_out.bmp");
     free(state.list_image_files);
     free(producer_threads);
+    //TODO ne pas oublier de free tous les var dynamiques
     return 0;
 }

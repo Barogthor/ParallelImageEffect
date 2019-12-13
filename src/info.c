@@ -94,7 +94,6 @@ void clone_state(const State *state_to_copy, State *new_state) {
     new_state->settings = state_to_copy->settings;
     new_state->stack = state_to_copy->stack;
     new_state->list_image_files = state_to_copy->list_image_files;
-    new_state->image_amount = state_to_copy->image_amount;
 }
 
 int list_dir(const char *path, State *state) {
@@ -113,8 +112,13 @@ int list_dir(const char *path, State *state) {
     state->list_image_files = (char **) malloc(number_of_files * sizeof(char *));
     while ((entry = readdir(dp))) {
         char *current_file_name = entry->d_name;
+        int length = strlen(current_file_name);
         if (strcmp(current_file_name, ".") != 0 && strcmp(current_file_name, "..") != 0) {
-            state->list_image_files[i++] = current_file_name;
+            state->list_image_files[i] = (char *) malloc(length * sizeof(char) + sizeof(char));
+            strncpy(state->list_image_files[i], current_file_name, length);
+            state->list_image_files[i][length] = '\0';
+            i++;
+
         }
     }
     closedir(dp);

@@ -45,9 +45,9 @@ typedef struct state_t {
     const Settings *settings;
     Stack *stack;
     char **list_image_files;
-    int image_amount;
     int start;
     int end;
+    int thread_id;
 } State;
 
 void clone_state(const State *state_to_copy, State *new_state);
