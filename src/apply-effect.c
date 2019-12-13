@@ -12,9 +12,9 @@
 #include "info.h"
 
 
-const float KERNEL[DIM][DIM] = {{-1,-1,-1},
-                                {-1, 8,-1},
-                                {-1,-1,-1}};
+const float EDGE_KERNEL[DIM][DIM] = {{-1, -1, -1},
+                                     {-1, 8,  -1},
+                                     {-1, -1, -1}};
 const float SHARPEN_KERNEL[DIM][DIM] = {{ 0,-1, 0},
                                         {-1, 5,-1},
                                         { 0,-1, 0}};
@@ -23,23 +23,36 @@ const float BOX_BLUR_KERNEL[DIM][DIM] = {{1/9,1/9,1/9},
                                          {1/9,1/9,1/9},
                                          {1/9,1/9,1/9}};
 
-//float** get_matrix_effect(enum ImageEffect const effect){
-//    switch(effect){
-//        case BOX_BLUR:
-//            return BOX_BLUR_KERNEL;
-//        case SHARPEN:
-//            return SHARPEN_KERNEL;
-//        case EDGE_DETECT:
-//        default:
-//            return KERNEL;
-//    }
-//}
-
+void get_matrix_effect(float dest[DIM][DIM], enum ImageEffect const effect) {
+    switch (effect) {
+        case BOX_BLUR:
+            for (int i = 0; i < DIM; i++) {
+                for (int j = 0; j < DIM; j++)
+                    dest[i][j] = BOX_BLUR_KERNEL[i][j];
+            }
+            break;
+        case SHARPEN:
+            for (int i = 0; i < DIM; i++) {
+                for (int j = 0; j < DIM; j++)
+                    dest[i][j] = SHARPEN_KERNEL[i][j];
+            }
+            break;
+        case EDGE_DETECT:
+        default:
+            for (int i = 0; i < DIM; i++) {
+                for (int j = 0; j < DIM; j++)
+                    dest[i][j] = EDGE_KERNEL[i][j];
+            }
+    }
+}
 
 void apply_effect(Image* original, Image* new_i, enum ImageEffect const effect) {
 
     int w = original->bmp_header.width;
     int h = original->bmp_header.height;
+
+    float KERNEL[DIM][DIM];
+    get_matrix_effect(KERNEL, effect);
 
     *new_i = new_image(w, h, original->bmp_header.bit_per_pixel, original->bmp_header.color_planes);
 
@@ -162,7 +175,6 @@ int main(int argc, char** argv) {
     if (number_of_files == -1) {
         return -1;
     }
-
 
     int integer_part, remains, end;
     integer_part = number_of_files / state.settings->number_of_threads;
