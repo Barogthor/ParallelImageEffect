@@ -35,6 +35,7 @@ const float BOX_BLUR_KERNEL[DIM][DIM] = {{1/9,1/9,1/9},
 //    }
 //}
 
+
 void apply_effect(Image* original, Image* new_i, enum ImageEffect const effect) {
 
     int w = original->bmp_header.width;
@@ -71,39 +72,71 @@ void apply_effect(Image* original, Image* new_i, enum ImageEffect const effect) 
 void *save_processed_image(void *shared_state) {
     State *state = (State *) (shared_state);
     int tmp_file_id = 1;
+    Stack *stack = state->stack;
+    Settings *settings = state->settings;
     while (1) {
         //TODO réutiliser le nom de l'image d'origine
-        pthread_mutex_lock(&state->stack->lock);
-        if (state->stack->count <= 0) {
-            pthread_cond_signal(&state->stack->can_transform_image);
-            pthread_cond_wait(&state->stack->can_save_on_disk, &state->stack->lock);
+        pthread_mutex_lock(&stack->lock);
+        if (stack->count <= 0) {
+            printf("[CONSUMER] Waiting refilling stack\n");
+            pthread_cond_signal(&stack->can_transform_image);
+            pthread_cond_wait(&stack->can_save_on_disk, &stack->lock);
         }
-        char file_name[255];
-        sprintf(file_name, "%s/%d", state->settings->destination_folder, tmp_file_id);
-//        save_bitmap(state->stack->stack[state->stack->count], file_name);
-        state->stack->count--;
-        tmp_file_id++;
-        pthread_mutex_unlock(&state->stack->lock);
+        if (stack->count > 0) {
+            char file_name[400];
+            sprintf(file_name, "%s/%d.bmp", settings->destination_folder, tmp_file_id);
+            printf("[CONSUMER] count: %d | Saving transformed in : %s\n", stack->count, file_name);
+            save_bitmap(stack->stack[stack->count - 1], file_name);
+//            free(stack->stack[stack->count]);
+//            stack->stack[stack->count] = 0;
+            printf("is saved\n");
+            stack->count--;
+            printf("123\n");
+            tmp_file_id++;
+            printf("456\n");
+        }
+        printf("plop\n");
+        pthread_mutex_unlock(&stack->lock);
+        printf("bruh\n");
     }
 
 }
 
 void *transform_image(void *shared_state) {
     State *state = (State *) shared_state;
+//    printf("[PRODUCER] id: %d | [%d;%d[ | %p\n", state->thread_id, state->start, state->end, state->list_image_files);
+//    for(int i = state->start; i < state->end ; i++) {
+//        printf("[PRODUCER] id: %2d - %2d - %p - %d | %s\n", state->thread_id, i, state->list_image_files[i], strlen(state->list_image_files[i]), state->list_image_files[i]);
+//    }
+    int index_file = state->start;
+    Stack *stack = state->stack;
+    Settings *settings = state->settings;
+    const int *MAX = stack->max;
     while (1) {
-        pthread_mutex_lock(&state->stack->lock);
-        if (state->stack->count >= state->stack->max) {
-            pthread_cond_signal(&state->stack->can_save_on_disk);
-            pthread_cond_wait(&state->stack->can_transform_image, &state->stack->lock);
+        pthread_mutex_lock(&stack->lock);
+        if (stack->count >= MAX) {
+            pthread_cond_signal(&stack->can_save_on_disk);
+            pthread_cond_wait(&stack->can_transform_image, &stack->lock);
         }
-        char file_name[255];
-        sprintf(file_name, "%s/%s", state->settings->source_folder, "un_nom");
+        printf("[PRODUCER] id: %d | count: %d, max: %d\n", state->thread_id, stack->count, stack->max);
+        if (index_file < state->end && stack->count < MAX) {
+            char file_name[400];
+            sprintf(file_name, "%s/%s", settings->source_folder, state->list_image_files[index_file]);
+//            printf("[PRODUCER] id: %d | %s\n", state->thread_id, file_name);
 
-//        Image img = open_bitmap(file_name);
-//        Image new_i;
-//        apply_effect(&img, &new_i, state->settings->effect);
-//        state->stack->stack[state->stack->count++] = new_i;
-        pthread_mutex_unlock(&state->stack->lock);
+            Image img = open_bitmap(file_name);
+            Image new_i;
+//            stack->stack[stack->count] = (Image*)malloc(sizeof(Image));
+            apply_effect(&img, &new_i, state->settings->effect);
+            stack->stack[stack->count] = new_i;
+            stack->count++;
+            pthread_mutex_unlock(&stack->lock);
+            index_file++;
+        } else {
+            pthread_mutex_unlock(&stack->lock);
+            pthread_cond_signal(&stack->can_save_on_disk);
+            return;
+        }
     }
 }
 
@@ -129,6 +162,7 @@ int main(int argc, char** argv) {
     if (number_of_files == -1) {
         return -1;
     }
+
 
     int integer_part, remains, end;
     integer_part = number_of_files / state.settings->number_of_threads;
