@@ -102,6 +102,7 @@ void *save_processed_image(void *shared_state) {
             save_bitmap(stack->stack[stack->count - 1], file_name);
 //            free(stack->stack[stack->count]);
 //            stack->stack[stack->count] = 0;
+            destroy_image(&stack->stack[stack->count - 1]);
             printf("is saved\n");
             stack->count--;
             printf("123\n");

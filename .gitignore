@@ -52,5 +52,7 @@ Mkfile.old
 dkms.conf
 
 *.bmp
-compile.sh
+
 .idea/
+TD1/
+TD2/
