@@ -79,9 +79,10 @@ int set_settings(int const argc, char **argv, Settings *settings) {
     return 0;
 }
 
-void init_stack(Stack *stack) {
+void init_stack(Stack *stack, const Settings *settings) {
     stack->count = 0;
     stack->max = IMAGE_STACK_SIZE;
+    stack->thread_remaining_at_work = settings->number_of_threads;
     pthread_cond_init(&stack->can_transform_image, NULL);
     pthread_cond_init(&stack->can_save_on_disk, NULL);
     pthread_mutex_init(&stack->lock, NULL);

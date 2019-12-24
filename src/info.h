@@ -38,6 +38,7 @@ typedef struct stack_t {
     Image stack[IMAGE_STACK_SIZE];
     int count;
     int max;
+    int thread_remaining_at_work;
     pthread_mutex_t lock;
     pthread_cond_t can_save_on_disk;
     pthread_cond_t can_transform_image;
@@ -64,7 +65,7 @@ void print_help();
 
 int set_settings(int const argc, char **argv, Settings *settings);
 
-void init_stack(Stack *stack);
+void init_stack(Stack *stack, const Settings *settings);
 
 int list_dir(const char *path, State *state);
 

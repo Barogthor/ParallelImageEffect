@@ -95,9 +95,14 @@ void *save_processed_image(void *shared_state) {
         //TODO réutiliser le nom de l'image d'origine
         pthread_mutex_lock(&stack->lock);
         if (stack->count <= 0) {
-            printf("[CONSUMER] Waiting refilling stack\n");
-            pthread_cond_signal(&stack->can_transform_image);
-            pthread_cond_wait(&stack->can_save_on_disk, &stack->lock);
+            if (stack->thread_remaining_at_work <= 0) {
+                pthread_mutex_unlock(&stack->lock);
+                return;
+            } else {
+                printf("[CONSUMER] Waiting refilling stack\n");
+                pthread_cond_signal(&stack->can_transform_image);
+                pthread_cond_wait(&stack->can_save_on_disk, &stack->lock);
+            }
         }
         if (stack->count > 0) {
             const int NAME_LENGTH = strlen(settings->destination_folder) + 10;
@@ -151,6 +156,7 @@ void *transform_image(void *shared_state) {
         } else {
             pthread_mutex_unlock(&stack->lock);
             pthread_cond_signal(&stack->can_save_on_disk);
+            stack->thread_remaining_at_work--;
             return;
         }
     }
@@ -167,7 +173,7 @@ int main(int argc, char** argv) {
     int code = set_settings(argc, argv, &settings);
     if(code != 0) return code;
     print_settings(&settings);
-    init_stack(&stack);
+    init_stack(&stack, &settings);
     state.stack = &stack;
     state.settings = &settings;
     pthread_attr_init(&attr);
@@ -208,6 +214,6 @@ int main(int argc, char** argv) {
     save_bitmap(new_i, "out/test_out.bmp");
     free(state.list_image_files);
     free(producer_threads);
-    //TODO ne pas oublier de free tous les var dynamiques
+    //TODO ne pas oublier de free toutes les var dynamiques
     return 0;
 }
