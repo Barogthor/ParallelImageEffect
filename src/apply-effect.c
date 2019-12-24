@@ -3,13 +3,9 @@
 	//UTILISER UNIQUEMENT DES BMP 24bits
 */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include "bitmap.h"
-#include <stdint.h>
-#include <pthread.h>
 #include "info.h"
+#include "bitmap.h"
+#include <pthread.h>
 
 
 const float EDGE_KERNEL[DIM][DIM] = {{-1, -1, -1},
@@ -56,17 +52,25 @@ void apply_effect(Image* original, Image* new_i, enum ImageEffect const effect) 
 
     *new_i = new_image(w, h, original->bmp_header.bit_per_pixel, original->bmp_header.color_planes);
 
+    LOOP_y:
     for (int y = OFFSET; y < h - OFFSET; y++) {
+        LOOP_x:
         for (int x = OFFSET; x < w - OFFSET; x++) {
             Color_e c = { .Red = 0, .Green = 0, .Blue = 0};
-
-            for(int a = 0; a < LENGHT; a++){
-                for(int b = 0; b < LENGHT; b++){
+//            float* tmp_color[] = {&c.Red, &c.Green, &c.Blue};
+            LOOP_a:
+            for (int a = 0; a < LENGHT; a++) {
+                LOOP_b:
+                for (int b = 0; b < LENGHT; b++) {
                     int xn = x + a - OFFSET;
                     int yn = y + b - OFFSET;
 
                     Pixel* p = &original->pixel_data[yn][xn];
 
+//                    float o_color[] = {(float)p->r, (float)p->g, (float)p->b};
+//                    LOOP_i: for(int i = 0; i < 3; i++){
+//                        *tmp_color[i] += o_color[i] * KERNEL[a][b];
+//                    }
                     c.Red += ((float) p->r) * KERNEL[a][b];
                     c.Green += ((float) p->g) * KERNEL[a][b];
                     c.Blue += ((float) p->b) * KERNEL[a][b];
@@ -86,7 +90,7 @@ void *save_processed_image(void *shared_state) {
     State *state = (State *) (shared_state);
     int tmp_file_id = 1;
     Stack *stack = state->stack;
-    Settings *settings = state->settings;
+    const Settings *settings = state->settings;
     while (1) {
         //TODO réutiliser le nom de l'image d'origine
         pthread_mutex_lock(&stack->lock);
@@ -96,22 +100,20 @@ void *save_processed_image(void *shared_state) {
             pthread_cond_wait(&stack->can_save_on_disk, &stack->lock);
         }
         if (stack->count > 0) {
-            char file_name[400];
+            const int NAME_LENGTH = strlen(settings->destination_folder) + 10;
+            char *file_name = (char *) malloc(sizeof(char) * NAME_LENGTH);
             sprintf(file_name, "%s/%d.bmp", settings->destination_folder, tmp_file_id);
             printf("[CONSUMER] count: %d | Saving transformed in : %s\n", stack->count, file_name);
             save_bitmap(stack->stack[stack->count - 1], file_name);
 //            free(stack->stack[stack->count]);
 //            stack->stack[stack->count] = 0;
             destroy_image(&stack->stack[stack->count - 1]);
-            printf("is saved\n");
             stack->count--;
-            printf("123\n");
             tmp_file_id++;
-            printf("456\n");
+            free(file_name);
+//            file_name = NULL;
         }
-        printf("plop\n");
         pthread_mutex_unlock(&stack->lock);
-        printf("bruh\n");
     }
 
 }
@@ -124,8 +126,8 @@ void *transform_image(void *shared_state) {
 //    }
     int index_file = state->start;
     Stack *stack = state->stack;
-    Settings *settings = state->settings;
-    const int *MAX = stack->max;
+    const Settings *settings = state->settings;
+    const int MAX = stack->max;
     while (1) {
         pthread_mutex_lock(&stack->lock);
         if (stack->count >= MAX) {

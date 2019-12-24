@@ -1,8 +1,5 @@
 #include "info.h"
 #include <dirent.h>
-#include <string.h>
-#include <stdio.h>
-#include <stdlib.h>
 
 int exit_with_error(char *msg) {
     perror(msg);

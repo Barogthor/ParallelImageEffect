@@ -56,3 +56,4 @@ dkms.conf
 .idea/
 TD1/
 TD2/
+*.s

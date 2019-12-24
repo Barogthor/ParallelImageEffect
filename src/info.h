@@ -5,13 +5,15 @@
 
 #include <pthread.h>
 #include "bitmap.h"
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #define IMAGE_STACK_SIZE 12
 #define DIM 3
 #define LENGHT DIM
 #define OFFSET DIM /2
 #define MAX_FILE_INPUT 200
-
 
 typedef struct Color_t {
     float Red;
