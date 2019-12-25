@@ -112,7 +112,7 @@ int list_dir(const char *path, State *state) {
         char *current_file_name = entry->d_name;
         int length = strlen(current_file_name);
         if (strcmp(current_file_name, ".") != 0 && strcmp(current_file_name, "..") != 0) {
-            state->list_image_files[i] = (char *) malloc(length * sizeof(char) + sizeof(char));
+            state->list_image_files[i] = malloc(length + 1);
             strncpy(state->list_image_files[i], current_file_name, length);
             state->list_image_files[i][length] = '\0';
             i++;

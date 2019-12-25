@@ -2,11 +2,9 @@
 	//gcc edge-detect.c bitmap.c -O2 -ftree-vectorize -fopt-info -mavx2 -fopt-info-vec-all
 	//UTILISER UNIQUEMENT DES BMP 24bits
 */
-
 #include "info.h"
 #include "bitmap.h"
 #include <pthread.h>
-
 
 const float EDGE_KERNEL[DIM][DIM] = {{-1, -1, -1},
                                      {-1, 8,  -1},
@@ -43,13 +41,11 @@ void get_matrix_effect(float dest[DIM][DIM], enum ImageEffect const effect) {
 }
 
 void apply_effect(Image* original, Image* new_i, enum ImageEffect const effect) {
-
     int w = original->bmp_header.width;
     int h = original->bmp_header.height;
-
     float KERNEL[DIM][DIM];
-    get_matrix_effect(KERNEL, effect);
 
+    get_matrix_effect(KERNEL, effect);
     *new_i = new_image(w, h, original->bmp_header.bit_per_pixel, original->bmp_header.color_planes);
 
     LOOP_y:
@@ -88,47 +84,40 @@ void apply_effect(Image* original, Image* new_i, enum ImageEffect const effect) 
 //TODO utiliser une autre strcuture de données pouvant lire et écrire sans concurrence
 void *save_processed_image(void *shared_state) {
     State *state = (State *) (shared_state);
-    int tmp_file_id = 1;
     Stack *stack = state->stack;
     const Settings *settings = state->settings;
     while (1) {
-        //TODO réutiliser le nom de l'image d'origine
         pthread_mutex_lock(&stack->lock);
-        if (stack->count <= 0) {
+        const current_count = stack->count;
+        if (current_count <= 0) {
             if (stack->thread_remaining_at_work <= 0) {
                 pthread_mutex_unlock(&stack->lock);
-                return;
+                printf("stopping consummer \n");
+                return 0;
             } else {
                 printf("[CONSUMER] Waiting refilling stack\n");
                 pthread_cond_signal(&stack->can_transform_image);
                 pthread_cond_wait(&stack->can_save_on_disk, &stack->lock);
             }
         }
-        if (stack->count > 0) {
-            const int NAME_LENGTH = strlen(settings->destination_folder) + 10;
-            char *file_name = (char *) malloc(sizeof(char) * NAME_LENGTH);
-            sprintf(file_name, "%s/%d.bmp", settings->destination_folder, tmp_file_id);
-            printf("[CONSUMER] count: %d | Saving transformed in : %s\n", stack->count, file_name);
-            save_bitmap(stack->stack[stack->count - 1], file_name);
-//            free(stack->stack[stack->count]);
-//            stack->stack[stack->count] = 0;
-            destroy_image(&stack->stack[stack->count - 1]);
+        if (current_count > 0) {
+            const int NAME_LENGTH =
+                    strlen(settings->destination_folder) + strlen(stack->stack[current_count - 1].name) + 1;
+            char file_name[NAME_LENGTH];
+            memset(file_name, '\0', NAME_LENGTH);
+            sprintf(file_name, "%s/%s", settings->destination_folder, stack->stack[current_count - 1].name);
+            printf("[CONSUMER] count: %d | Saving transformed in : %s\n", current_count, file_name);
+            save_bitmap(stack->stack[current_count - 1].image, file_name);
+            destroy_image(&stack->stack[current_count - 1].image);
+            memset(stack->stack[current_count - 1].name, '\0', NAME_BUFFER_SIZE);
             stack->count--;
-            tmp_file_id++;
-            free(file_name);
-//            file_name = NULL;
         }
         pthread_mutex_unlock(&stack->lock);
     }
-
 }
 
 void *transform_image(void *shared_state) {
     State *state = (State *) shared_state;
-//    printf("[PRODUCER] id: %d | [%d;%d[ | %p\n", state->thread_id, state->start, state->end, state->list_image_files);
-//    for(int i = state->start; i < state->end ; i++) {
-//        printf("[PRODUCER] id: %2d - %2d - %p - %d | %s\n", state->thread_id, i, state->list_image_files[i], strlen(state->list_image_files[i]), state->list_image_files[i]);
-//    }
     int index_file = state->start;
     Stack *stack = state->stack;
     const Settings *settings = state->settings;
@@ -141,24 +130,49 @@ void *transform_image(void *shared_state) {
         }
         printf("[PRODUCER] id: %d | count: %d, max: %d\n", state->thread_id, stack->count, stack->max);
         if (index_file < state->end && stack->count < MAX) {
-            char file_name[400];
-            sprintf(file_name, "%s/%s", settings->source_folder, state->list_image_files[index_file]);
-//            printf("[PRODUCER] id: %d | %s\n", state->thread_id, file_name);
+            const int SOURCE_LEN = strlen(settings->source_folder);
+            const int FILE_NAME_LEN = strlen(state->list_image_files[index_file]);
+            char file_path[NAME_BUFFER_SIZE];
+            sprintf(file_path, "%s/%s", settings->source_folder, state->list_image_files[index_file]);
 
-            Image img = open_bitmap(file_name);
+            Image img = open_bitmap(file_path);
             Image new_i;
-//            stack->stack[stack->count] = (Image*)malloc(sizeof(Image));
             apply_effect(&img, &new_i, state->settings->effect);
-            stack->stack[stack->count] = new_i;
+            stack->stack[stack->count].image = new_i;
+            sprintf(stack->stack[stack->count].name, "%s\0", state->list_image_files[index_file]);
             stack->count++;
             pthread_mutex_unlock(&stack->lock);
             index_file++;
         } else {
+            stack->thread_remaining_at_work--;
             pthread_mutex_unlock(&stack->lock);
             pthread_cond_signal(&stack->can_save_on_disk);
-            stack->thread_remaining_at_work--;
             return;
         }
+    }
+}
+
+void start_producers(pthread_t *producer_threads, const State *state, const int number_of_files) {
+    pthread_attr_t attr;
+    int integer_part, remains, end;
+    integer_part = number_of_files / state->settings->number_of_threads;
+    remains = number_of_files % state->settings->number_of_threads;
+    end = 0;
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    for (int i = 0; i < state->settings->number_of_threads; i++) {
+        int start = end;
+        end += integer_part;
+        if (remains > 0) {
+            remains--;
+            end++;
+        }
+        State *thread_state = (State *) malloc(sizeof(State));
+        clone_state(state, thread_state);
+        thread_state->start = start;
+        thread_state->end = end;
+        thread_state->thread_id = i;
+        pthread_create(&producer_threads[i], &attr, transform_image, thread_state);
     }
 }
 
@@ -168,50 +182,24 @@ int main(int argc, char** argv) {
     State state;
     pthread_t consumer_thread;
     pthread_t *producer_threads;
-    pthread_attr_t attr;
 
     int code = set_settings(argc, argv, &settings);
-    if(code != 0) return code;
+    if (code != 0)
+        return code;
     print_settings(&settings);
     init_stack(&stack, &settings);
     state.stack = &stack;
     state.settings = &settings;
-    pthread_attr_init(&attr);
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-    producer_threads = (pthread_t *) malloc(sizeof(pthread_t) * settings.number_of_threads);
-//    void* arg = &state;
+    producer_threads = malloc(sizeof(pthread_t) * settings.number_of_threads);
     int number_of_files = list_dir(settings.source_folder, &state);
     if (number_of_files == -1) {
         return -1;
     }
-
-    int integer_part, remains, end;
-    integer_part = number_of_files / state.settings->number_of_threads;
-    remains = number_of_files % state.settings->number_of_threads;
-    end = 0;
-    for (int i = 0; i < settings.number_of_threads; i++) {
-        int start = end;
-        end += integer_part;
-        if (remains > 0) {
-            remains--;
-            end++;
-        }
-        State *thread_state = (State *) malloc(sizeof(State));
-        clone_state(&state, thread_state);
-        thread_state->start = start;
-        thread_state->end = end;
-        thread_state->thread_id = i;
-//        printf("[MAIN] id: %d | [%d;%d[ | %p | size: %ld\n", thread_state->thread_id, thread_state->start, thread_state->end, thread_state->list_image_files,
-//               sizeof(thread_state));
-//        printf("[MAIN] i: %d | %p\n", i, thread_state);
-        pthread_create(&producer_threads[i], &attr, transform_image, thread_state);
-    }
+    start_producers(producer_threads, &state, number_of_files);
     pthread_create(&consumer_thread, NULL, save_processed_image, &state);
     pthread_join(consumer_thread, NULL);
-    Image img = open_bitmap("in/bmp_tank.bmp");
-    Image new_i;
-    apply_effect(&img, &new_i, settings.effect);
-    save_bitmap(new_i, "out/test_out.bmp");
+    for (int i = 0; i < number_of_files; i++)
+        free(state.list_image_files[i]);
     free(state.list_image_files);
     free(producer_threads);
     //TODO ne pas oublier de free toutes les var dynamiques

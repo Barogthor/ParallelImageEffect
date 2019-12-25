@@ -14,6 +14,7 @@
 #define LENGHT DIM
 #define OFFSET DIM /2
 #define MAX_FILE_INPUT 200
+#define NAME_BUFFER_SIZE 500
 
 typedef struct Color_t {
     float Red;
@@ -27,6 +28,11 @@ enum ImageEffect {
     SHARPEN
 };
 
+typedef struct Image_Name_tuple_t {
+    char name[NAME_BUFFER_SIZE];
+    Image image;
+} ImageNameTuple;
+
 typedef struct setting_t {
     char *source_folder;
     char *destination_folder;
@@ -35,7 +41,7 @@ typedef struct setting_t {
 } Settings;
 
 typedef struct stack_t {
-    Image stack[IMAGE_STACK_SIZE];
+    ImageNameTuple stack[IMAGE_STACK_SIZE];
     int count;
     int max;
     int thread_remaining_at_work;
