@@ -88,7 +88,7 @@ void *save_processed_image(void *shared_state) {
     const Settings *settings = state->settings;
     while (1) {
         pthread_mutex_lock(&stack->lock);
-        const current_count = stack->count;
+        const int current_count = stack->count;
         if (current_count <= 0) {
             if (stack->thread_remaining_at_work <= 0) {
                 pthread_mutex_unlock(&stack->lock);
@@ -116,7 +116,7 @@ void *save_processed_image(void *shared_state) {
     }
 }
 
-void *transform_image(void *shared_state) {
+void *produce_image_transformation(void *shared_state) {
     State *state = (State *) shared_state;
     int index_file = state->start;
     Stack *stack = state->stack;
@@ -130,11 +130,8 @@ void *transform_image(void *shared_state) {
         }
         printf("[PRODUCER] id: %d | count: %d, max: %d\n", state->thread_id, stack->count, stack->max);
         if (index_file < state->end && stack->count < MAX) {
-            const int SOURCE_LEN = strlen(settings->source_folder);
-            const int FILE_NAME_LEN = strlen(state->list_image_files[index_file]);
             char file_path[NAME_BUFFER_SIZE];
             sprintf(file_path, "%s/%s", settings->source_folder, state->list_image_files[index_file]);
-
             Image img = open_bitmap(file_path);
             Image new_i;
             apply_effect(&img, &new_i, state->settings->effect);
@@ -147,7 +144,7 @@ void *transform_image(void *shared_state) {
             stack->thread_remaining_at_work--;
             pthread_mutex_unlock(&stack->lock);
             pthread_cond_signal(&stack->can_save_on_disk);
-            return;
+            return 0;
         }
     }
 }
@@ -172,7 +169,7 @@ void start_producers(pthread_t *producer_threads, const State *state, const int 
         thread_state->start = start;
         thread_state->end = end;
         thread_state->thread_id = i;
-        pthread_create(&producer_threads[i], &attr, transform_image, thread_state);
+        pthread_create(&producer_threads[i], &attr, produce_image_transformation, thread_state);
     }
 }
 

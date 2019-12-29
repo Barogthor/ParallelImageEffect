@@ -16,7 +16,7 @@ void set_default_settings(Settings *settings) {
 void print_settings(Settings const *settings) {
     printf("SOURCE              : %s\n", settings->source_folder);
     printf("DESTINATION         : %s\n", settings->destination_folder);
-    printf("NUMBER OF CONSUMERS : %d\n", settings->number_of_threads);
+    printf("NUMBER OF PRODUCERS : %d\n", settings->number_of_threads);
     switch (settings->effect) {
         case BOX_BLUR:
             printf("EFFECT              : Box blurring\n");
@@ -33,7 +33,7 @@ void print_settings(Settings const *settings) {
 void print_help() {
     printf("-s or --source <a_string_source>           : Argument to customize source folder (./in as default)\n");
     printf("-d or --destination <a_string_destination> : Argument to customize destination folder (./out as default)\n");
-    printf("-t or --threads <an_int>                   : Argument to customize number of productors thread working [1;16] (1 as default)\n");
+    printf("-t or --threads <an_int>                   : Argument to customize number of producers thread working [1;16] (1 as default)\n");
     printf("-e or --effect <a_string_effect>           : Argument to customize image effect <boxblur|sharpen|edgedetect> (edgedetect as default)\n");
 }
 
