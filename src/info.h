@@ -40,6 +40,27 @@ typedef struct setting_t {
     enum ImageEffect effect;
 } Settings;
 
+typedef struct file_t {
+    ImageNameTuple file[IMAGE_STACK_SIZE];
+    int head;
+    int tail;
+    int max;
+    int thread_remaining_at_work;
+    pthread_mutex_t lock;
+    pthread_cond_t can_save_on_disk;
+    pthread_cond_t can_transform_image;
+} File;
+
+int is_filled(const File* file);
+
+int is_empty(const File* file);
+
+const ImageNameTuple* peek(const File* file);
+
+void push(File* file, ImageNameTuple *item);
+
+ImageNameTuple* pop(File* file);
+
 typedef struct stack_t {
     ImageNameTuple stack[IMAGE_STACK_SIZE];
     int count;

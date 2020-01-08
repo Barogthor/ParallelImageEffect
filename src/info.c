@@ -148,3 +148,35 @@ int list_dir(const char *path, State *state) {
     closedir(dp);
     return i;
 }
+
+//int count(const File* file){
+//
+//}
+
+int is_filled(const File* file){
+    int next_from_tail = (file->tail+1) % file->max;
+    return next_from_tail == file->head;
+}
+
+int is_empty(const File* file){
+    int next_from_head = (file->head+1) % file->max;
+    return next_from_head == file->tail;
+}
+
+const ImageNameTuple* peek(const File* file){
+    return &file->file[file->head];
+}
+
+void push(File* file, ImageNameTuple *item){
+    int next_index = (file->tail+1) % file->max;
+    file->file[next_index] = *item;
+    file->tail = next_index;
+}
+
+ImageNameTuple* pop(File* file){
+    int prev_index = file->head;
+    int next_index = (file->head+1) % file->max;
+    ImageNameTuple* item = &file->file[prev_index];
+    file->head = next_index;
+    return item;
+}
