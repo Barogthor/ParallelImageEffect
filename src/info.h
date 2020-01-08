@@ -75,4 +75,5 @@ void init_stack(Stack *stack, const Settings *settings);
 
 int list_dir(const char *path, State *state);
 
+int empty_out(const char* path);
 #endif //PROJET_PARALLÈLE_INFO_H

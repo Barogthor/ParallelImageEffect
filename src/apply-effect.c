@@ -6,46 +6,84 @@
 #include "bitmap.h"
 #include <pthread.h>
 
-const float EDGE_KERNEL[DIM][DIM] = {{-1, -1, -1},
-                                     {-1, 8,  -1},
-                                     {-1, -1, -1}};
-const float SHARPEN_KERNEL[DIM][DIM] = {{ 0,-1, 0},
-                                        {-1, 5,-1},
-                                        { 0,-1, 0}};
+typedef struct matrix_convolution_t{
+    float** matrix;
+    const double constant;
+    const int DIM_X;
+    const int DIM_Y;
+} MatrixConvolution;
 
-const float BOX_BLUR_KERNEL[DIM][DIM] = {{1/9,1/9,1/9},
-                                         {1/9,1/9,1/9},
-                                         {1/9,1/9,1/9}};
+void init_convolution_matrix(MatrixConvolution* convolution){
+    convolution->matrix = malloc(convolution->DIM_X * sizeof(float*));
+    for(int i = 0 ; i < convolution->DIM_X; i++)
+        convolution->matrix[i] = malloc(convolution->DIM_Y * sizeof(float));
+}
+const MatrixConvolution* init_edge_detect(){
+  MatrixConvolution convolution = { .constant = 1, .DIM_X = 3, .DIM_Y = 3};
+  init_convolution_matrix(&convolution);
+  convolution.matrix[0][0] = -1;
+  convolution.matrix[0][1] = -1;
+  convolution.matrix[0][2] = -1;
+  convolution.matrix[1][0] = -1;
+  convolution.matrix[1][1] = -8;
+  convolution.matrix[1][2] = -1;
+  convolution.matrix[2][0] = -1;
+  convolution.matrix[2][1] = -1;
+  convolution.matrix[2][2] = -1;
+  return &convolution;
+}
+const MatrixConvolution* init_sharpen(){
+  MatrixConvolution convolution = { .constant = 1, .DIM_X = 3, .DIM_Y = 3};
+  init_convolution_matrix(&convolution);
+  convolution.matrix[0][0] = -0;
+  convolution.matrix[0][1] = -1;
+  convolution.matrix[0][2] = 0;
+  convolution.matrix[1][0] = -1;
+  convolution.matrix[1][1] = 5;
+  convolution.matrix[1][2] = -1;
+  convolution.matrix[2][0] = 0;
+  convolution.matrix[2][1] = -1;
+  convolution.matrix[2][2] = 0;
+    return &convolution;
+}
+const MatrixConvolution* init_box_blur(){
+  MatrixConvolution convolution = { .constant = 1/9, .DIM_X = 3, .DIM_Y = 3};
+  init_convolution_matrix(&convolution);
+  convolution.matrix[0][0] = 1;
+  convolution.matrix[0][1] = 1;
+  convolution.matrix[0][2] = 1;
+  convolution.matrix[1][0] = 1;
+  convolution.matrix[1][1] = 1;
+  convolution.matrix[1][2] = 1;
+  convolution.matrix[2][0] = 1;
+  convolution.matrix[2][1] = 1;
+  convolution.matrix[2][2] = 1;
+    return &convolution;
+}
 
-void get_matrix_effect(float dest[DIM][DIM], enum ImageEffect const effect) {
+const MatrixConvolution* EDGE_KERNEL;
+const MatrixConvolution* SHARPEN_KERNEL;
+const MatrixConvolution* BOX_BLUR_KERNEL;
+const MatrixConvolution* GAUSS_BLUR_KERNEL;
+
+const MatrixConvolution* get_matrix_effect(float dest[DIM][DIM], enum ImageEffect const effect) {
     switch (effect) {
         case BOX_BLUR:
-            for (int i = 0; i < DIM; i++) {
-                for (int j = 0; j < DIM; j++)
-                    dest[i][j] = BOX_BLUR_KERNEL[i][j];
-            }
-            break;
+            return BOX_BLUR_KERNEL;
         case SHARPEN:
-            for (int i = 0; i < DIM; i++) {
-                for (int j = 0; j < DIM; j++)
-                    dest[i][j] = SHARPEN_KERNEL[i][j];
-            }
-            break;
+            return SHARPEN_KERNEL;
         case EDGE_DETECT:
         default:
-            for (int i = 0; i < DIM; i++) {
-                for (int j = 0; j < DIM; j++)
-                    dest[i][j] = EDGE_KERNEL[i][j];
-            }
+            return EDGE_KERNEL;
     }
 }
 
 void apply_effect(Image* original, Image* new_i, enum ImageEffect const effect) {
     int w = original->bmp_header.width;
     int h = original->bmp_header.height;
-    float KERNEL[DIM][DIM];
+    float KERNEL1[DIM][DIM];
 
-    get_matrix_effect(KERNEL, effect);
+    const MatrixConvolution* KERNEL = get_matrix_effect(KERNEL1, effect);
     *new_i = new_image(w, h, original->bmp_header.bit_per_pixel, original->bmp_header.color_planes);
 
     LOOP_y:
@@ -55,9 +93,9 @@ void apply_effect(Image* original, Image* new_i, enum ImageEffect const effect) 
             Color_e c = { .Red = 0, .Green = 0, .Blue = 0};
 //            float* tmp_color[] = {&c.Red, &c.Green, &c.Blue};
             LOOP_a:
-            for (int a = 0; a < LENGHT; a++) {
+            for (int a = 0; a < KERNEL->DIM_X; a++) {
                 LOOP_b:
-                for (int b = 0; b < LENGHT; b++) {
+                for (int b = 0; b < KERNEL->DIM_Y; b++) {
                     int xn = x + a - OFFSET;
                     int yn = y + b - OFFSET;
 
@@ -67,16 +105,18 @@ void apply_effect(Image* original, Image* new_i, enum ImageEffect const effect) 
 //                    LOOP_i: for(int i = 0; i < 3; i++){
 //                        *tmp_color[i] += o_color[i] * KERNEL[a][b];
 //                    }
-                    c.Red += ((float) p->r) * KERNEL[a][b];
-                    c.Green += ((float) p->g) * KERNEL[a][b];
-                    c.Blue += ((float) p->b) * KERNEL[a][b];
+                    c.Red += ((float) p->r) * KERNEL->matrix[a][b];
+                    c.Green += ((float) p->g) * KERNEL->matrix[a][b];
+                    c.Blue += ((float) p->b) * KERNEL->matrix[a][b];
                 }
             }
-
+            c.Red *= KERNEL->constant;
+            c.Blue *= KERNEL->constant;
+            c.Green *= KERNEL->constant;
             Pixel* dest = &new_i->pixel_data[y][x];
             dest->r = (uint8_t)(c.Red <= 0 ? 0 : c.Red >= 255 ? 255 : c.Red);
-            dest->g = (uint8_t) (c.Green <= 0 ? 0 : c.Green >= 255 ? 255 : c.Green);
-            dest->b = (uint8_t) (c.Blue <= 0 ? 0 : c.Blue >= 255 ? 255 : c.Blue);
+            dest->g = (uint8_t)(c.Green <= 0 ? 0 : c.Green >= 255 ? 255 : c.Green);
+            dest->b = (uint8_t)(c.Blue <= 0 ? 0 : c.Blue >= 255 ? 255 : c.Blue);
         }
     }
 }
@@ -136,7 +176,7 @@ void *produce_image_transformation(void *shared_state) {
             Image new_i;
             apply_effect(&img, &new_i, state->settings->effect);
             stack->stack[stack->count].image = new_i;
-            sprintf(stack->stack[stack->count].name, "%s\0", state->list_image_files[index_file]);
+            sprintf(stack->stack[stack->count].name, "%s", state->list_image_files[index_file]);
             stack->count++;
             pthread_mutex_unlock(&stack->lock);
             index_file++;
@@ -180,6 +220,9 @@ int main(int argc, char** argv) {
     pthread_t consumer_thread;
     pthread_t *producer_threads;
 
+    EDGE_KERNEL = init_edge_detect();
+    BOX_BLUR_KERNEL = init_box_blur();
+    SHARPEN_KERNEL = init_sharpen();
     int code = set_settings(argc, argv, &settings);
     if (code != 0)
         return code;
@@ -188,6 +231,10 @@ int main(int argc, char** argv) {
     state.stack = &stack;
     state.settings = &settings;
     producer_threads = malloc(sizeof(pthread_t) * settings.number_of_threads);
+    code = empty_out(settings.destination_folder);
+    if (code == -1) {
+        return -1;
+    }
     int number_of_files = list_dir(settings.source_folder, &state);
     if (number_of_files == -1) {
         return -1;
