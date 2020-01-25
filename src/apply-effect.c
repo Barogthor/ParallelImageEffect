@@ -13,9 +13,9 @@ const float SHARPEN_KERNEL[DIM][DIM] = {{ 0,-1, 0},
                                         {-1, 5,-1},
                                         { 0,-1, 0}};
 
-const float BOX_BLUR_KERNEL[DIM][DIM] = {{1/9,1/9,1/9},
-                                         {1/9,1/9,1/9},
-                                         {1/9,1/9,1/9}};
+const float BOX_BLUR_KERNEL[DIM][DIM] = {{1./9,1./9,1./9},
+                                         {1./9,1./9,1./9},
+                                         {1./9,1./9,1./9}};
 
 void get_matrix_effect(float dest[DIM][DIM], enum ImageEffect const effect) {
     switch (effect) {
@@ -96,7 +96,7 @@ void *save_processed_image(void *shared_state) {
                 return 0;
             } else {
                 printf("[CONSUMER] Waiting refilling stack\n");
-                pthread_cond_signal(&stack->can_transform_image);
+                pthread_cond_broadcast(&stack->can_transform_image);
                 pthread_cond_wait(&stack->can_save_on_disk, &stack->lock);
             }
         }
@@ -188,6 +188,10 @@ int main(int argc, char** argv) {
     state.stack = &stack;
     state.settings = &settings;
     producer_threads = malloc(sizeof(pthread_t) * settings.number_of_threads);
+    code = empty_out(settings.destination_folder);
+    if (code == -1) {
+        return -1;
+    }
     int number_of_files = list_dir(settings.source_folder, &state);
     if (number_of_files == -1) {
         return -1;

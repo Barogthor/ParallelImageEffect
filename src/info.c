@@ -1,5 +1,6 @@
 #include "info.h"
 #include <dirent.h>
+#include <unistd.h>
 
 int exit_with_error(char *msg) {
     perror(msg);
@@ -92,6 +93,31 @@ void clone_state(const State *state_to_copy, State *new_state) {
     new_state->settings = state_to_copy->settings;
     new_state->stack = state_to_copy->stack;
     new_state->list_image_files = state_to_copy->list_image_files;
+}
+
+int empty_out(const char* path){
+    struct dirent *entry;
+    DIR *dp;
+
+    dp = opendir(path);
+    if (dp == NULL) {
+        perror("Error opening directory");
+        return -1;
+    }
+    while ((entry = readdir(dp))) {
+        char buffer[1024];
+        char *current_file_name = entry->d_name;
+        sprintf(buffer, "%s/%s", path, current_file_name);
+        if (strcmp(current_file_name, ".") != 0 && strcmp(current_file_name, "..") != 0) {
+            int code = unlink(buffer);
+            if (code != 0) {
+                printf("Unknown file : %s", buffer);
+                return -1;
+            }
+        }
+    }
+    closedir(dp);
+    return 0;
 }
 
 int list_dir(const char *path, State *state) {

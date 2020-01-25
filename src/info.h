@@ -73,6 +73,8 @@ int set_settings(int const argc, char **argv, Settings *settings);
 
 void init_stack(Stack *stack, const Settings *settings);
 
+int empty_out(const char* path);
+
 int list_dir(const char *path, State *state);
 
 #endif //PROJET_PARALLÈLE_INFO_H
