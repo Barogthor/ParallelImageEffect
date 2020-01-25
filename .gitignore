@@ -57,3 +57,6 @@ dkms.conf
 TD1/
 TD2/
 *.s
+cmake-build-debug
+cmake-build-release
+*.7z
