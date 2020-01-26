@@ -40,6 +40,18 @@ void get_matrix_effect(float dest[DIM][DIM], enum ImageEffect const effect) {
     }
 }
 
+void inline apply_convolution(Color_e* c, int a, int b, int x, int y, Image* img, const float KERNEL[DIM][DIM]) __attribute__((always_inline));
+void apply_convolution(Color_e* restrict c, int a, int b, int x, int y, Image* restrict img, const float KERNEL[DIM][DIM]) {
+    int xn = x + a - OFFSET;
+    int yn = y + b - OFFSET;
+
+    Pixel* p = &img->pixel_data[yn][xn];
+
+    c->Red += ((float) p->r) * KERNEL[a][b];
+    c->Green += ((float) p->g) * KERNEL[a][b];
+    c->Blue += ((float) p->b) * KERNEL[a][b];
+}
+
 void apply_effect(Image* original, Image* new_i, enum ImageEffect const effect) {
     int w = original->bmp_header.width;
     int h = original->bmp_header.height;
@@ -53,25 +65,18 @@ void apply_effect(Image* original, Image* new_i, enum ImageEffect const effect) 
         LOOP_x:
         for (int x = OFFSET; x < w - OFFSET; x++) {
             Color_e c = { .Red = 0, .Green = 0, .Blue = 0};
-//            float* tmp_color[] = {&c.Red, &c.Green, &c.Blue};
-            LOOP_a:
-            for (int a = 0; a < LENGHT; a++) {
-                LOOP_b:
-                for (int b = 0; b < LENGHT; b++) {
-                    int xn = x + a - OFFSET;
-                    int yn = y + b - OFFSET;
 
-                    Pixel* p = &original->pixel_data[yn][xn];
+            apply_convolution(&c, 0, 0, x, y, original, KERNEL);
+            apply_convolution(&c, 0, 1, x, y, original, KERNEL);
+            apply_convolution(&c, 0, 2, x, y, original, KERNEL);
 
-//                    float o_color[] = {(float)p->r, (float)p->g, (float)p->b};
-//                    LOOP_i: for(int i = 0; i < 3; i++){
-//                        *tmp_color[i] += o_color[i] * KERNEL[a][b];
-//                    }
-                    c.Red += ((float) p->r) * KERNEL[a][b];
-                    c.Green += ((float) p->g) * KERNEL[a][b];
-                    c.Blue += ((float) p->b) * KERNEL[a][b];
-                }
-            }
+            apply_convolution(&c, 1, 0, x, y, original, KERNEL);
+            apply_convolution(&c, 1, 1, x, y, original, KERNEL);
+            apply_convolution(&c, 1, 2, x, y, original, KERNEL);
+
+            apply_convolution(&c, 2, 0, x, y, original, KERNEL);
+            apply_convolution(&c, 2, 1, x, y, original, KERNEL);
+            apply_convolution(&c, 2, 2, x, y, original, KERNEL);
 
             Pixel* dest = &new_i->pixel_data[y][x];
             dest->r = (uint8_t)(c.Red <= 0 ? 0 : c.Red >= 255 ? 255 : c.Red);
